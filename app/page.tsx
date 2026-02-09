@@ -14,102 +14,93 @@ import {
   LabelList 
 } from 'recharts';
 
-interface MetaData {
-  gasto: any;
-  leads: any;
-  data_inicio: string;
-  CLIENTE: string;
-  Gestor: string;
-  "meta cpl"?: number;
+interface ClienteData {
+  cliente: string;
+  gastoTotal: number;
+  leadsTotal: number;
+  cplTotal: number;
+  "reuniao agendada": number;
+  "%ra": number;
+  "reuniao realizada": number;
+  "%rr": number;
+  Semana: string;
+  "Custo por Reuniao Agendada": number;
+  "Custo por Reuniao Realizada": number;
 }
 
 export default function Dashboard() {
-  const [data, setData] = useState<MetaData[]>([]);
-  const [gestorAtivo, setGestorAtivo] = useState('Todos');
-  const [periodoRapido, setPeriodoRapido] = useState('7');
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [data, setData] = useState<ClienteData[]>([]);
+  const [semanaAtiva, setSemanaAtiva] = useState('Todas');
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
     async function fetchData() {
-      const { data: metaData } = await supabase
+      const { data: clienteData } = await supabase
         .from('meta_ads')
         .select('*')
-        .order('data_inicio', { ascending: false })
-        .limit(3000);
-      if (metaData) setData(metaData as MetaData[]);
+        .order('Semana', { ascending: false });
+      if (clienteData) setData(clienteData as ClienteData[]);
     }
     fetchData();
   }, []);
 
-  const opcoesGestores = useMemo(() => {
-    const gestores = data.map(i => i.Gestor?.trim()).filter(Boolean);
-    return [...new Set(gestores)].sort();
+  const opcoesSemanas = useMemo(() => {
+    const semanas = data.map(i => i.Semana?.trim()).filter(Boolean);
+    return [...new Set(semanas)].sort().reverse();
   }, [data]);
 
   const dadosFiltrados = useMemo(() => {
-    const hojeObj = new Date();
-    const toStr = (d: Date) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
     return data.filter(item => {
-      const dataItem = item.data_inicio;
-      let atendeData = false;
-
-      if (dataInicio || dataFim) {
-        atendeData = (!dataInicio || dataItem >= dataInicio) && (!dataFim || dataItem <= dataFim);
-      } else {
-        const dias = parseInt(periodoRapido);
-        const limite = new Date();
-        limite.setDate(hojeObj.getDate() - dias);
-        const ontem = new Date();
-        ontem.setDate(hojeObj.getDate() - 1); 
-        atendeData = dataItem >= toStr(limite) && dataItem <= toStr(ontem);
-      }
-      return (gestorAtivo === 'Todos' || item.Gestor?.trim() === gestorAtivo) && atendeData;
+      return semanaAtiva === 'Todas' || item.Semana?.trim() === semanaAtiva;
     });
-  }, [data, gestorAtivo, dataInicio, dataFim, periodoRapido]);
+  }, [data, semanaAtiva]);
 
   const todosClientes = useMemo(() => {
-    const nomesUnicos = [...new Set(dadosFiltrados.map(i => i.CLIENTE?.trim()))].filter(Boolean);
+    const nomesUnicos = [...new Set(dadosFiltrados.map(i => i.cliente?.trim()))].filter(Boolean);
 
     return nomesUnicos.map(nome => {
-      const registros = dadosFiltrados.filter(d => d.CLIENTE?.trim() === nome);
-      const metaCpl = data.find(d => d.CLIENTE?.trim() === nome)?.["meta cpl"] || 0;
-      const gasto = registros.reduce((acc, curr) => acc + Number(curr.gasto || 0), 0);
-      const leads = registros.reduce((acc, curr) => acc + Number(curr.leads || 0), 0);
+      const registros = dadosFiltrados.filter(d => d.cliente?.trim() === nome);
+      const gasto = registros.reduce((acc, curr) => acc + Number(curr.gastoTotal || 0), 0);
+      const leads = registros.reduce((acc, curr) => acc + Number(curr.leadsTotal || 0), 0);
+      const reunioesAgendadas = registros.reduce((acc, curr) => acc + Number(curr["reuniao agendada"] || 0), 0);
+      const reunioesRealizadas = registros.reduce((acc, curr) => acc + Number(curr["reuniao realizada"] || 0), 0);
       const cpl = leads > 0 ? gasto / leads : (gasto > 0 ? gasto : 0);
+      const custoRA = reunioesAgendadas > 0 ? gasto / reunioesAgendadas : 0;
+      const custoRR = reunioesRealizadas > 0 ? gasto / reunioesRealizadas : 0;
+      const percRA = leads > 0 ? (reunioesAgendadas / leads) * 100 : 0;
+      const percRR = leads > 0 ? (reunioesRealizadas / leads) * 100 : 0;
+
       return { 
         nome, 
         gasto: parseFloat(gasto.toFixed(2)), 
         leads, 
-        cpl: parseFloat(cpl.toFixed(2)), 
-        meta: metaCpl, 
-        estourouMeta: metaCpl > 0 && cpl > metaCpl 
+        cpl: parseFloat(cpl.toFixed(2)),
+        reunioesAgendadas,
+        reunioesRealizadas,
+        percRA: parseFloat(percRA.toFixed(2)),
+        percRR: parseFloat(percRR.toFixed(2)),
+        custoRA: parseFloat(custoRA.toFixed(2)),
+        custoRR: parseFloat(custoRR.toFixed(2)),
+        alertaCPL: cpl > 100,
+        alertaRA: percRA < 30
       };
     }).sort((a, b) => {
-      if (a.estourouMeta && !b.estourouMeta) return -1;
-      if (!a.estourouMeta && b.estourouMeta) return 1;
+      if (a.alertaCPL && !b.alertaCPL) return -1;
+      if (!a.alertaCPL && b.alertaCPL) return 1;
       return b.gasto - a.gasto;
     });
-  }, [data, dadosFiltrados]);
+  }, [dadosFiltrados]);
 
   const clientesGrafico = useMemo(() => {
-    if (gestorAtivo === 'Todos') {
-      return todosClientes.filter(c => c.estourouMeta);
-    }
-    return todosClientes;
-  }, [todosClientes, gestorAtivo]);
+    return todosClientes.slice(0, 15);
+  }, [todosClientes]);
 
-  const totalGasto = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.gasto || 0), 0);
-  const totalLeads = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.leads || 0), 0);
-  const totalSOS = todosClientes.filter(c => c.estourouMeta).length;
+  const totalGasto = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.gastoTotal || 0), 0);
+  const totalLeads = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.leadsTotal || 0), 0);
+  const totalReunioesAgendadas = dadosFiltrados.reduce((acc, curr) => acc + Number(curr["reuniao agendada"] || 0), 0);
+  const totalReunioesRealizadas = dadosFiltrados.reduce((acc, curr) => acc + Number(curr["reuniao realizada"] || 0), 0);
+  const totalAlertas = todosClientes.filter(c => c.alertaCPL || c.alertaRA).length;
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -129,6 +120,12 @@ export default function Dashboard() {
           </p>
           <p style={{ color: '#ffffff', fontSize: '11px', marginBottom: '4px' }}>
             CPL: <span style={{ fontWeight: 'bold' }}>R$ {data.cpl}</span>
+          </p>
+          <p style={{ color: '#ffffff', fontSize: '11px', marginBottom: '4px' }}>
+            Reuniões Agendadas: <span style={{ fontWeight: 'bold' }}>{data.reunioesAgendadas} ({data.percRA}%)</span>
+          </p>
+          <p style={{ color: '#ffffff', fontSize: '11px', marginBottom: '4px' }}>
+            Reuniões Realizadas: <span style={{ fontWeight: 'bold' }}>{data.reunioesRealizadas} ({data.percRR}%)</span>
           </p>
           <p style={{ color: '#ffffff', fontSize: '11px' }}>
             Investimento: <span style={{ fontWeight: 'bold' }}>R$ {data.gasto}</span>
@@ -158,65 +155,43 @@ export default function Dashboard() {
             <img src="/logo-empresa.png" alt="Logo" className="h-12 w-auto" />
             <select 
               className="appearance-none bg-purple-900/40 backdrop-blur-md text-white font-bold py-2 px-8 rounded-full border border-purple-700/50 text-[10px] uppercase outline-none cursor-pointer hover:bg-purple-800 transition-all min-w-[200px]" 
-              value={gestorAtivo} 
-              onChange={(e) => setGestorAtivo(e.target.value)}
+              value={semanaAtiva} 
+              onChange={(e) => setSemanaAtiva(e.target.value)}
             >
-              <option value="Todos">Visão Geral (Apenas S.O.S)</option>
-              {opcoesGestores.map(g => <option key={g} value={g}>{g}</option>)}
+              <option value="Todas">Todas as Semanas</option>
+              {opcoesSemanas.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex bg-purple-900/30 p-1 rounded-full border border-purple-700/50">
-              {['1', '7', '14'].map((d) => (
-                <button 
-                  key={d} 
-                  onClick={() => { setPeriodoRapido(d); setDataInicio(''); setDataFim(''); }} 
-                  className={`px-6 py-2 rounded-full text-[10px] font-black uppercase transition-all ${periodoRapido === d && !dataInicio && !dataFim ? 'bg-purple-600 text-white shadow-lg' : 'text-purple-400 hover:text-purple-200'}`}
-                >
-                  {d}D
-                </button>
-              ))}
-            </div>
-            
-            <div className="flex items-center gap-4 bg-purple-900/20 px-6 py-2 rounded-full border border-purple-700/30">
-               <input 
-                 type="date" 
-                 value={dataInicio} 
-                 onChange={(e) => { setDataInicio(e.target.value); setPeriodoRapido(''); }} 
-                 className="bg-transparent text-white text-[10px] font-bold outline-none uppercase cursor-pointer" 
-               />
-               <div className="h-4 w-[1px] bg-purple-700/30"></div>
-               <input 
-                 type="date" 
-                 value={dataFim} 
-                 onChange={(e) => { setDataFim(e.target.value); setPeriodoRapido(''); }} 
-                 className="bg-transparent text-white text-[10px] font-bold outline-none uppercase cursor-pointer" 
-               />
-            </div>
           </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-3 space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-purple-900/10 backdrop-blur-xl p-6 rounded-[2rem] border border-purple-500/20 text-center">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="bg-purple-900/10 backdrop-blur-xl p-4 rounded-[2rem] border border-purple-500/20 text-center">
                 <p className="text-purple-400 text-[9px] font-black uppercase mb-2 tracking-widest">Investimento</p>
-                <p className="text-3xl font-bold italic text-white">R$ {totalGasto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p className="text-2xl font-bold italic text-white">R$ {totalGasto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
               </div>
-              <div className="bg-purple-900/10 backdrop-blur-xl p-6 rounded-[2rem] border border-purple-500/20 text-center">
-                <p className="text-purple-400 text-[9px] font-black uppercase mb-2 tracking-widest">Leads Gerados</p>
-                <p className="text-4xl font-bold italic text-white">{totalLeads}</p>
+              <div className="bg-purple-900/10 backdrop-blur-xl p-4 rounded-[2rem] border border-purple-500/20 text-center">
+                <p className="text-purple-400 text-[9px] font-black uppercase mb-2 tracking-widest">Leads</p>
+                <p className="text-2xl font-bold italic text-white">{totalLeads}</p>
               </div>
-              <div className={`p-6 rounded-[2rem] border backdrop-blur-xl text-center ${totalSOS > 0 ? 'bg-red-900/20 border-red-500/40' : 'bg-purple-900/10 border-purple-500/20'}`}>
-                <p className="text-red-400 text-[9px] font-black uppercase mb-2 tracking-widest">Clientes S.O.S</p>
-                <p className="text-4xl font-bold italic text-red-500">{totalSOS}</p>
+              <div className="bg-purple-900/10 backdrop-blur-xl p-4 rounded-[2rem] border border-purple-500/20 text-center">
+                <p className="text-purple-400 text-[9px] font-black uppercase mb-2 tracking-widest">Reuniões Agendadas</p>
+                <p className="text-2xl font-bold italic text-emerald-400">{totalReunioesAgendadas}</p>
+              </div>
+              <div className="bg-purple-900/10 backdrop-blur-xl p-4 rounded-[2rem] border border-purple-500/20 text-center">
+                <p className="text-purple-400 text-[9px] font-black uppercase mb-2 tracking-widest">Reuniões Realizadas</p>
+                <p className="text-2xl font-bold italic text-emerald-400">{totalReunioesRealizadas}</p>
+              </div>
+              <div className={`p-4 rounded-[2rem] border backdrop-blur-xl text-center ${totalAlertas > 0 ? 'bg-red-900/20 border-red-500/40' : 'bg-purple-900/10 border-purple-500/20'}`}>
+                <p className="text-red-400 text-[9px] font-black uppercase mb-2 tracking-widest">Alertas</p>
+                <p className="text-2xl font-bold italic text-red-500">{totalAlertas}</p>
               </div>
             </div>
 
             <div className="bg-purple-900/5 backdrop-blur-md p-8 rounded-[3rem] border border-purple-500/10 h-[500px]">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-6 flex items-center gap-2">
-                {gestorAtivo === 'Todos' ? '🔴 Foco Crítico: Clientes que Estouraram o CPL' : `📊 Performance: ${gestorAtivo}`}
+                📊 Top 15 Clientes por Investimento
               </h3>
               <ResponsiveContainer width="100%" height="90%">
                 <ComposedChart data={clientesGrafico} margin={{ bottom: 100, top: 20, left: 10, right: 10 }}>
@@ -237,18 +212,18 @@ export default function Dashboard() {
                   
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(139, 92, 246, 0.05)' }} />
                   
-                  <Bar yAxisId="left" dataKey="leads" name="Leads" fill="#8b5cf6" radius={[6, 6, 0, 0]} barSize={25}>
-                    <LabelList dataKey="leads" position="top" fill="#8b5cf6" fontSize={10} fontWeight="bold" />
+                  <Bar yAxisId="left" dataKey="leads" name="Leads" fill="#8b5cf6" radius={[6, 6, 0, 0]} barSize={20}>
+                    <LabelList dataKey="leads" position="top" fill="#8b5cf6" fontSize={9} fontWeight="bold" />
                   </Bar>
                   
-                  <Bar yAxisId="left" dataKey="cpl" name="CPL" radius={[6, 6, 0, 0]} barSize={25}>
+                  <Bar yAxisId="left" dataKey="cpl" name="CPL" radius={[6, 6, 0, 0]} barSize={20}>
                     {clientesGrafico.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.estourouMeta ? '#ef4444' : '#4b2a85'} />
+                      <Cell key={`cell-${index}`} fill={entry.alertaCPL ? '#ef4444' : '#4b2a85'} />
                     ))}
-                    <LabelList dataKey="cpl" position="top" fill="#fff" fontSize={9} formatter={(v: any) => `R$${v}`} />
+                    <LabelList dataKey="cpl" position="top" fill="#fff" fontSize={8} formatter={(v: any) => `R$${v}`} />
                   </Bar>
 
-                  <Line yAxisId="right" type="monotone" dataKey="gasto" name="gasto" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
+                  <Line yAxisId="right" type="monotone" dataKey="gasto" name="Investimento" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -260,11 +235,27 @@ export default function Dashboard() {
             </h2>
             <div className="overflow-y-auto flex-1 pr-2 space-y-3 custom-scrollbar">
               {todosClientes.map((c, index) => (
-                <div key={c.nome} className={`p-4 rounded-2xl border ${c.estourouMeta ? 'bg-red-950/40 border-red-500/60' : 'bg-purple-950/40 border-purple-800/30'}`}>
-                   <p className="text-[10px] font-black uppercase text-white truncate">{index + 1}. {c.nome}</p>
-                   <div className="flex justify-between mt-2">
-                     <span className="text-[9px] text-purple-400 font-bold">{c.leads} Leads</span>
-                     <span className={`text-xs font-black ${c.estourouMeta ? 'text-red-500' : 'text-white'}`}>R$ {c.cpl.toFixed(2)}</span>
+                <div key={c.nome} className={`p-4 rounded-2xl border ${c.alertaCPL || c.alertaRA ? 'bg-red-950/40 border-red-500/60' : 'bg-purple-950/40 border-purple-800/30'}`}>
+                   <div className="flex items-start justify-between mb-2">
+                     <p className="text-[10px] font-black uppercase text-white truncate flex-1">{index + 1}. {c.nome}</p>
+                     {(c.alertaCPL || c.alertaRA) && <span className="text-red-500 text-xs">⚠️</span>}
+                   </div>
+                   <div className="space-y-1">
+                     <div className="flex justify-between">
+                       <span className="text-[9px] text-purple-400 font-bold">{c.leads} Leads</span>
+                       <span className={`text-xs font-black ${c.alertaCPL ? 'text-red-500' : 'text-white'}`}>CPL: R$ {c.cpl.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between">
+                       <span className="text-[9px] text-emerald-400 font-bold">RA: {c.reunioesAgendadas}</span>
+                       <span className={`text-[9px] font-bold ${c.alertaRA ? 'text-red-400' : 'text-emerald-300'}`}>{c.percRA.toFixed(1)}%</span>
+                     </div>
+                     <div className="flex justify-between">
+                       <span className="text-[9px] text-emerald-400 font-bold">RR: {c.reunioesRealizadas}</span>
+                       <span className="text-[9px] text-emerald-300 font-bold">{c.percRR.toFixed(1)}%</span>
+                     </div>
+                     <div className="text-[8px] text-purple-300 mt-2 pt-2 border-t border-purple-800/30">
+                       Custo RA: R$ {c.custoRA.toFixed(2)} | RR: R$ {c.custoRR.toFixed(2)}
+                     </div>
                    </div>
                 </div>
               ))}
