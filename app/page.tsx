@@ -16,18 +16,31 @@ import {
 
 interface ClienteData {
   cliente?: string;
-  gastoTotal?: number;
-  leadsTotal?: number;
-  cplTotal?: number;
-  "reuniao agendada"?: number;
-  "%ra"?: number;
-  "reuniao realizada"?: number;
-  "%rr"?: number;
+  gastoTotal?: number | string;
+  leadsTotal?: number | string;
+  cplTotal?: number | string;
+  "reuniao agendada"?: number | string;
+  "%ra"?: number | string;
+  "reuniao realizada"?: number | string;
+  "%rr"?: number | string;
   Semana?: string;
-  "Custo por Reuniao Agendada"?: number;
-  "Custo por Reuniao Realizada"?: number;
+  "Custo por Reuniao Agendada"?: number | string;
+  "Custo por Reuniao Realizada"?: number | string;
   [key: string]: any;
 }
+
+// Função helper para converter valores para números
+const parseValor = (val: any): number => {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    // Remove R$, pontos (separador de milhar) e substitui vírgula por ponto
+    const cleaned = val.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
 
 export default function Dashboard() {
   const [data, setData] = useState<ClienteData[]>([]);
@@ -94,10 +107,11 @@ export default function Dashboard() {
 
     return nomesUnicos.map(nome => {
       const registros = dadosFiltrados.filter(d => d.cliente?.trim() === nome);
-      const gasto = registros.reduce((acc, curr) => acc + Number(curr.gastoTotal || 0), 0);
-      const leads = registros.reduce((acc, curr) => acc + Number(curr.leadsTotal || 0), 0);
-      const reunioesAgendadas = registros.reduce((acc, curr) => acc + Number(curr["reuniao agendada"] || 0), 0);
-      const reunioesRealizadas = registros.reduce((acc, curr) => acc + Number(curr["reuniao realizada"] || 0), 0);
+      
+      const gasto = registros.reduce((acc, curr) => acc + parseValor(curr.gastoTotal), 0);
+      const leads = registros.reduce((acc, curr) => acc + parseValor(curr.leadsTotal), 0);
+      const reunioesAgendadas = registros.reduce((acc, curr) => acc + parseValor(curr["reuniao agendada"]), 0);
+      const reunioesRealizadas = registros.reduce((acc, curr) => acc + parseValor(curr["reuniao realizada"]), 0);
       const cpl = leads > 0 ? gasto / leads : (gasto > 0 ? gasto : 0);
       const custoRA = reunioesAgendadas > 0 ? gasto / reunioesAgendadas : 0;
       const custoRR = reunioesRealizadas > 0 ? gasto / reunioesRealizadas : 0;
@@ -129,10 +143,10 @@ export default function Dashboard() {
     return todosClientes.slice(0, 15);
   }, [todosClientes]);
 
-  const totalGasto = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.gastoTotal || 0), 0);
-  const totalLeads = dadosFiltrados.reduce((acc, curr) => acc + Number(curr.leadsTotal || 0), 0);
-  const totalReunioesAgendadas = dadosFiltrados.reduce((acc, curr) => acc + Number(curr["reuniao agendada"] || 0), 0);
-  const totalReunioesRealizadas = dadosFiltrados.reduce((acc, curr) => acc + Number(curr["reuniao realizada"] || 0), 0);
+  const totalGasto = dadosFiltrados.reduce((acc, curr) => acc + parseValor(curr.gastoTotal), 0);
+  const totalLeads = dadosFiltrados.reduce((acc, curr) => acc + parseValor(curr.leadsTotal), 0);
+  const totalReunioesAgendadas = dadosFiltrados.reduce((acc, curr) => acc + parseValor(curr["reuniao agendada"]), 0);
+  const totalReunioesRealizadas = dadosFiltrados.reduce((acc, curr) => acc + parseValor(curr["reuniao realizada"]), 0);
   const totalAlertas = todosClientes.filter(c => c.alertaCPL || c.alertaRA).length;
   
   // Calcular custos médios de RA e RR
@@ -347,7 +361,7 @@ export default function Dashboard() {
 
           <div className="bg-white/5 backdrop-blur-2xl p-6 rounded-3xl border-2 border-gray-800 h-[820px] flex flex-col">
             <h2 className="text-xs font-black mb-6 uppercase tracking-widest text-purple-400 border-b-2 border-gray-800 pb-4 text-center">
-               TODOS OS CLIENTES ({todosClientes.length})
+              📋 TODOS OS CLIENTES ({todosClientes.length})
             </h2>
             {todosClientes.length === 0 ? (
               <div className="flex items-center justify-center flex-1 text-gray-500">
